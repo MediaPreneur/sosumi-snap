@@ -35,7 +35,7 @@ class Filesystem:
         remote = requests.get(url, stream=True, headers=ClientMeta.osinstall)
 
         with open(filename, 'wb') as f:
-            with click.progressbar(remote.iter_content(1024), length=size/1024, label="Fetching {} ...".format(filename)) as stream:
+            with click.progressbar(remote.iter_content(1024), length=size/1024, label=f"Fetching {filename} ...") as stream:
                 for data in stream:
                     f.write(data)
         return filename
@@ -50,18 +50,17 @@ class Filesystem:
 
     @staticmethod
     def fetch_plist(url):
-        logging.info("Network Request: %s", "Fetching {}".format(url))
+        logging.info("Network Request: %s", f"Fetching {url}")
         plist_raw = requests.get(url, headers=ClientMeta.swupdate)
-        plist_data = plist_raw.text.encode('UTF-8')
-        return plist_data
+        return plist_raw.text.encode('UTF-8')
     
     @staticmethod
     def parse_plist(catalog_data):
-        if sys.version_info > (3, 0):
-            root = plistlib.loads(catalog_data)
-        else:
-            root = plistlib.readPlistFromString(catalog_data)
-        return root
+        return (
+            plistlib.loads(catalog_data)
+            if sys.version_info > (3, 0)
+            else plistlib.readPlistFromString(catalog_data)
+        )
 
 class SoftwareService:
     # macOS 10.15 is available in 4 different catalogs from SoftwareScan
@@ -93,20 +92,24 @@ class SoftwareService:
         # Load catalogs based on Py3/2 lib
         root = Filesystem.parse_plist(self.catalog_data)
 
-        # Iterate to find valid OSInstall packages
-        ospackages = []
         products = root['Products']
-        for product in products:
-            if products.get(product, {}).get('ExtendedMetaInfo', {}).get('InstallAssistantPackageIdentifiers', {}).get('OSInstall', {}) == 'com.apple.mpkg.OSInstall':
-                ospackages.append(product)
-                
+        ospackages = [
+            product
+            for product in products
+            if products.get(product, {})
+            .get('ExtendedMetaInfo', {})
+            .get('InstallAssistantPackageIdentifiers', {})
+            .get('OSInstall', {})
+            == 'com.apple.mpkg.OSInstall'
+        ]
+
         # Iterate for an specific version
         candidates = []
         for product in ospackages:
             meta_url = products.get(product, {}).get('ServerMetadataURL', {})
             if self.version in Filesystem.parse_plist(Filesystem.fetch_plist(meta_url)).get('CFBundleShortVersionString', {}):
                 candidates.append(product)
-        
+
         return candidates
 
 
@@ -146,10 +149,10 @@ def fetchmacos(output_dir="BaseSystem/", catalog_version="10.15", catalog_id="Pu
     try:
         product = MacOSProduct(catalog, product_id)
     except KeyError:
-        print("Product ID {} could not be found.".format(product_id))
+        print(f"Product ID {product_id} could not be found.")
         exit(1)
-        
-    logging.info("Selected macOS Product: {}".format(product_id))
+
+    logging.info(f"Selected macOS Product: {product_id}")
 
     # Download package to disk
     product.fetchpackages(output_dir, keyword="BaseSystem")
